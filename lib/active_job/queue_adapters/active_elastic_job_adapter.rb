@@ -133,17 +133,37 @@ module ActiveJob
             queue_url: queue_url(queue_name),
             message_body: serialized_job,
             delay_seconds: calculate_delay(timestamp),
-            message_attributes: {
-              "message-digest".freeze => {
-                string_value: message_digest(serialized_job),
-                data_type: "String".freeze
-              },
-              origin: {
-                string_value: ActiveElasticJob::ACRONYM,
-                data_type: "String".freeze
-              }
+            message_attributes: build_message_attributes(serialized_job)
+          }.merge(fifo_required_params(serialized_job))
+        end
+
+        def build_message_attributes(serialized_job)
+          {
+            "message-digest".freeze => {
+              string_value: message_digest(serialized_job),
+              data_type: "String".freeze
+            },
+            origin: {
+              string_value: ActiveElasticJob::ACRONYM,
+              data_type: "String".freeze
             }
           }
+        end
+
+        def fifo_required_params(serialized_job)
+          fifo_required_keys.each_with_object({}) do |key, hsh|
+            if value = job_parsed_arguments(serialized_job)[key.to_s]
+              hsh[key] = value
+            end
+          end
+        end
+
+        def fifo_required_keys
+          %i[message_group_id message_deduplication_id]
+        end
+
+        def job_parsed_arguments(serialized_job)
+          JSON.parse(serialized_job)['arguments'].last
         end
 
         def queue_url(queue_name)
@@ -172,7 +192,7 @@ module ActiveJob
         end
 
         def aws_sqs_client
-          @aws_sqs_client ||= Aws::SQS::Client.new(credentials: aws_sqs_client_credentials )
+          @aws_sqs_client ||= Aws::SQS::Client.new(credentials: aws_sqs_client_credentials)
         end
 
         def aws_sqs_client_credentials
@@ -191,13 +211,13 @@ module ActiveJob
           Rails.application.config.active_elastic_job
         end
 
-        def message_digest(messsage_body)
+        def message_digest(message_body)
           @verifier ||= ActiveElasticJob::MessageVerifier.new(secret_key_base)
-          @verifier.generate_digest(messsage_body)
+          @verifier.generate_digest(message_body)
         end
 
-        def verify_md5_digests!(response, messsage_body, message_attributes)
-          calculated = md5_of_message_body(messsage_body)
+        def verify_md5_digests!(response, message_body, message_attributes)
+          calculated = md5_of_message_body(message_body)
           returned = response.md5_of_message_body
           if calculated != returned
             raise MD5MismatchError.new response.message_id, calculated, returned
@@ -206,7 +226,7 @@ module ActiveJob
           if message_attributes
             calculated = md5_of_message_attributes(message_attributes)
             returned = response.md5_of_message_attributes
-            if  calculated != returned
+            if calculated != returned
               raise MD5MismatchError.new response.message_id, calculated, returned
             end
           end
