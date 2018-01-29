@@ -129,12 +129,16 @@ module ActiveJob
         end
 
         def build_message(queue_name, serialized_job, timestamp)
-          {
+          args = {
             queue_url: queue_url(queue_name),
             message_body: serialized_job,
             delay_seconds: calculate_delay(timestamp),
             message_attributes: build_message_attributes(serialized_job)
           }.merge(fifo_required_params(serialized_job))
+
+          if queue_name.split('.').last == 'fifo'
+            args.merge(fifo_required_params(serialized_job))
+          end
         end
 
         def build_message_attributes(serialized_job)
@@ -152,18 +156,23 @@ module ActiveJob
 
         def fifo_required_params(serialized_job)
           fifo_required_keys.each_with_object({}) do |key, hsh|
-            if value = job_parsed_arguments(serialized_job)[key.to_s]
-              hsh[key] = value
-            end
+            parsed_job = JSON.parse(serialized_job)
+            value = parsed_job['arguments'].select { |arg| arg.is_a?(Hash) && arg.has_key?(key) }.first
+            hsh[key] = value.present? ? value : default_value(key, parsed_job)
+          end
+        end
+
+        def default_value(key, parsed_job)
+          case key
+          when :message_group_id
+            parsed_job['job_class']
+          when :message_deduplication_id
+            parsed_job['job_id']
           end
         end
 
         def fifo_required_keys
           %i[message_group_id message_deduplication_id]
-        end
-
-        def job_parsed_arguments(serialized_job)
-          JSON.parse(serialized_job)['arguments'].last
         end
 
         def queue_url(queue_name)
