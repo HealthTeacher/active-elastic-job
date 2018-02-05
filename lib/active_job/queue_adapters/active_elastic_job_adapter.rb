@@ -165,7 +165,7 @@ module ActiveJob
         def default_value(key, parsed_job)
           case key
           when :message_group_id
-            parsed_job['job_class']
+            parsed_job['job_id']
           when :message_deduplication_id
             parsed_job['job_id']
           end
