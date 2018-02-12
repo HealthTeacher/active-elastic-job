@@ -134,11 +134,13 @@ module ActiveJob
             message_body: serialized_job,
             delay_seconds: calculate_delay(timestamp),
             message_attributes: build_message_attributes(serialized_job)
-          }.merge(fifo_required_params(serialized_job))
+          }
 
           if queue_name.split('.').last == 'fifo'
-            args.merge(fifo_required_params(serialized_job))
+            args.merge!(fifo_required_params(serialized_job))
           end
+
+          args
         end
 
         def build_message_attributes(serialized_job)
